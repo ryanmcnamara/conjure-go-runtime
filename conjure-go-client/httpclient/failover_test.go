@@ -53,6 +53,7 @@ func TestFailover503(t *testing.T) {
 
 func TestFailover429(t *testing.T) {
 	n := 0
+	doneChan:=make(chan struct{}, 1)
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		n++
 		if n == 3 {
@@ -64,6 +65,9 @@ func TestFailover429(t *testing.T) {
 			_, err := rw.Write([]byte("body"))
 			require.NoError(t, err)
 		}
+		if n==3 {
+			doneChan<-struct{}{}
+		}
 	})
 
 	s1 := httptest.NewServer(handler)
@@ -74,9 +78,11 @@ func TestFailover429(t *testing.T) {
 	cli, err := NewClient(WithBaseURLs([]string{s1.URL, s2.URL, s3.URL}), WithInitialBackoff(backoff), WithMaxBackoff(backoff))
 	require.NoError(t, err)
 
-	timer := time.NewTimer(backoff)
+	timer := time.NewTimer(time.Minute)
 	_, err = cli.Do(context.Background(), WithRequestMethod("GET"))
 	select {
+	case <-doneChan:
+		break
 	case <-timer.C:
 		break
 	default:
